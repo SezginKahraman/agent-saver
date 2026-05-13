@@ -21,11 +21,11 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   }
 
   async detectActiveSession(cwd: string): Promise<string | null> {
-    return detectActiveSession(cwd, { home: this.home });
+    return detectActiveSession(cwd, { ...(this.home !== undefined && { home: this.home }) });
   }
 
   async readTranscript(sessionId: string, cwd: string): Promise<RawTranscript> {
-    return readTranscript(sessionId, cwd, { home: this.home });
+    return readTranscript(sessionId, cwd, { ...(this.home !== undefined && { home: this.home }) });
   }
 
   async writeTranscript(transcript: RawTranscript, opts: WriteOpts): Promise<string> {
@@ -33,7 +33,7 @@ export class ClaudeCodeAdapter implements ToolAdapter {
       newSessionId: opts.newSessionId,
       parentSessionId: opts.parentSessionId,
     });
-    await writeTranscript(rewritten, opts, { home: this.home });
+    await writeTranscript(rewritten, opts, { ...(this.home !== undefined && { home: this.home }) });
     return opts.newSessionId;
   }
 
