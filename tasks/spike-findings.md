@@ -181,3 +181,19 @@ The `getSessionId()` UUID appears only as:
 3. **Env opportunistic bonus:** If the user's shell has `CLAUDE_CODE_REMOTE_SESSION_ID` set in the environment that launched CC, it will be present in the MCP child env — but this only applies to remote/CCR sessions, not local interactive sessions.
 
 **Conclusion:** env-based detection is unreliable for the primary local use case. mtime-primary is the correct strategy.
+
+---
+
+## 0.3 — UUID rewrite round-trip (sandbox)
+
+- Source UUID: `4036555a-76f1-49ce-9aad-0d696ae653c8`
+- Rewritten UUID: `a760680a-ce79-4bf9-9ebb-6f231e477024`
+- Resume successful: **yes**
+- Response cited prior message: **yes** — model replied "You asked me to reply with exactly: `SPIKE_MARKER_42`"
+- Notes / quirks:
+  - macOS `/tmp` is a symlink to `/private/tmp`. CC's `realpathSync` resolves it, so the actual project dir was `~/.claude/projects/-private-tmp-agent-saver-spike-<pid>`, **not** `-tmp-agent-saver-spike-<pid>`. The plan's `tr '/' '-'` shortcut would have produced the wrong path; the real path requires the resolved `/private/tmp` prefix. **agent-saver must use `realpathSync` (or equivalent) on the target cwd before encoding it.**
+  - The resume spawned a second CC subprocess from the sandbox cwd (`/private/tmp/agent-saver-spike-<pid>`) with `--resume <new-uuid>`. CC found the file at `~/.claude/projects/-private-tmp-agent-saver-spike-<pid>/<new-uuid>.jsonl` and loaded the conversation correctly.
+  - The rewritten JSONL had `parentSessionId = <old-uuid>` on line 0 only (per the plan's rewrite script). CC did not reject or warn about this field.
+  - The resume session appended new `queue-operation`, `progress`, `user`, `assistant`, and `last-prompt` lines to the rewritten JSONL (all with the new sessionId). The file grew from 8 to 15 lines after the resume turn — normal CC behaviour.
+  - The original source JSONL (`4036555a-...`) was left untouched in the sandbox dir; CC did not modify it during the resume of the clone.
+  - **Load mechanism viability: CONFIRMED.** Placing a UUID-rewritten JSONL in the correct project dir and running `claude --resume <new-uuid>` from the matching cwd works end-to-end.
