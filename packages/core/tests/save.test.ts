@@ -11,7 +11,10 @@ import type { RawTranscript } from '../src/types.js';
 
 class MockAdapter implements ToolAdapter {
   readonly toolName = 'mock';
-  constructor(public sessionId = 'mock-session-id', public raw = '{"m":1}\n{"m":2}\n') {}
+  constructor(
+    public sessionId: string | null = 'mock-session-id',
+    public raw = '{"m":1}\n{"m":2}\n',
+  ) {}
   async detectActiveSession(): Promise<string | null> {
     return this.sessionId;
   }
@@ -37,10 +40,12 @@ class MockAdapter implements ToolAdapter {
 
 describe('save', () => {
   let repo: string;
+  let fakeHomeForCleanup: string | undefined;
   const origHome = process.env.HOME;
 
   beforeEach(async () => {
     repo = await mkdtemp(join(tmpdir(), 'save-test-'));
+    fakeHomeForCleanup = undefined;
     execSync('git init -b main', { cwd: repo });
     execSync('git config user.email t@t.t && git config user.name t', { cwd: repo, shell: '/bin/bash' });
     await writeFile(join(repo, 'a.txt'), 'hi');
@@ -49,6 +54,9 @@ describe('save', () => {
 
   afterEach(async () => {
     await rm(repo, { recursive: true, force: true });
+    if (fakeHomeForCleanup) {
+      await rm(fakeHomeForCleanup, { recursive: true, force: true });
+    }
     if (origHome !== undefined) process.env.HOME = origHome;
   });
 
@@ -65,6 +73,7 @@ describe('save', () => {
     expect(ref.metadata.files_touched).toEqual(['src/x.ts']);
     expect(ref.metadata.git_branch).toBe('main');
     expect(ref.metadata.git_dirty).toBe(false);
+    expect(ref.metadata.git_sha).toMatch(/^[0-9a-f]{40}$/);
 
     // verify on disk
     const reread = await new ProjectStore(repo).read('jacob');
@@ -75,6 +84,7 @@ describe('save', () => {
     const adapter = new MockAdapter();
     // Use HOME override so we don't pollute the real home dir
     const fakeHome = await mkdtemp(join(tmpdir(), 'home-'));
+    fakeHomeForCleanup = fakeHome;
     process.env.HOME = fakeHome;
     const ref = await save(adapter, 'shared', { cwd: repo, scope: 'global' });
     expect(ref.scope).toBe('global');
@@ -82,10 +92,7 @@ describe('save', () => {
   });
 
   it('throws when adapter detects no active session', async () => {
-    const adapter = new MockAdapter('');
-    adapter.sessionId = '';
-    (adapter as unknown as { detectActiveSession: () => Promise<null> }).detectActiveSession =
-      async () => null;
+    const adapter = new MockAdapter(null);
     await expect(save(adapter, 'x', { cwd: repo })).rejects.toThrow(/no active session/i);
   });
 });

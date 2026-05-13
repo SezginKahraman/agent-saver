@@ -14,7 +14,7 @@ export async function save(
   const cwd = opts.cwd ?? process.cwd();
   const sessionId = opts.sessionId ?? (await adapter.detectActiveSession(cwd));
   if (!sessionId) {
-    throw new Error('no active session detected — pass --session-id explicitly?');
+    throw new Error('no active session detected — provide opts.sessionId to override detection');
   }
 
   const transcript = await adapter.readTranscript(sessionId, cwd);
