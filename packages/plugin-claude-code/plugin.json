@@ -1,0 +1,12 @@
+{
+  "name": "claude-agent-saver",
+  "version": "0.1.0",
+  "description": "Save, name, and reload Claude Code sessions.",
+  "commands": "./commands",
+  "mcpServers": {
+    "agent-saver": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp/server.js"]
+    }
+  }
+}
