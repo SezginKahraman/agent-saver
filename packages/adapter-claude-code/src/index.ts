@@ -1,1 +1,1 @@
-export {};
+export { ClaudeCodeAdapter } from './adapter.js';
