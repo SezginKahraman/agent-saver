@@ -4,4 +4,8 @@ export * from './store/index.js';
 export { FsStore } from './store/fs-store.js';
 export { ProjectStore } from './store/project-store.js';
 export { GlobalStore } from './store/global-store.js';
+export { save } from './operations/save.js';
+export { load } from './operations/load.js';
+export { list } from './operations/list.js';
+export { collectGitContext } from './git.js';
 export { VERSION } from './version.js';
