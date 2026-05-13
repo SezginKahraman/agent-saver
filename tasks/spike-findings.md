@@ -126,3 +126,58 @@ Whether CC correctly renders and continues the conversation depends on the conve
 2. Does CC require the `uuid` field in messages to match a specific pattern, or is any UUID valid?
 3. Does the absence of a `summary` / `metadata` entry cause the session to be invisible in the `/resume` picker? (The picker filters sessions with no `summary` field — see `listSessionsImpl.ts:111–122`.)
 4. Does compaction metadata need to be present, or does a clean transcript resume correctly?
+
+---
+
+## 0.2 — MCP env exposure
+
+### MCP child spawn location
+
+`src/services/mcp/client.ts:950` — `new StdioClientTransport({ command, args, env: { ...subprocessEnv(), ...serverRef.env } })`
+
+### How env is constructed
+
+The spawn env is built from two layers merged at the call site:
+
+1. **`subprocessEnv()`** (`src/utils/subprocessEnv.ts:79–99`) — returns `process.env` with optional additions/scrubbing:
+   - **Normal case (non-GHA):** returns `process.env` as-is (full parent env inheritance).
+   - **GHA scrub case** (`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`): returns `{ ...process.env }` with a specific allowlist of secret vars deleted (API keys, cloud creds, GitHub Actions tokens). No `CLAUDE_*` session identity vars are in the scrub list.
+   - **CCR proxy case:** injects `HTTPS_PROXY` and CA bundle vars from the upstream proxy.
+
+2. **`serverRef.env`** (`src/services/mcp/types.ts`, `McpServerConfigSchema`) — optional `Record<string, string>` from user-defined `env:` block in `claude_desktop_config.json` / project settings. These override/extend the parent env.
+
+### Env vars explicitly set on children
+
+No `CLAUDE_*` session identity vars are explicitly injected by CC into the MCP child env. The child inherits the full `process.env` of the CC parent process via `subprocessEnv()`.
+
+**`CLAUDE_*` vars present in parent `process.env` at spawn time (thus inherited):**
+
+| Var | Where set | Value |
+|-----|-----------|-------|
+| `CLAUDE_CODE_ENTRYPOINT` | `src/main.tsx:527/531/539` | `'mcp'` / `'cli'` / etc. — set before any MCP spawn |
+| `CLAUDE_CODE_SIMPLE` | `src/main.tsx:1015` | `'1'` when simple mode |
+| `CLAUDE_CODE_AGENT` | `src/main.tsx:1117` | agent CLI path |
+| `CLAUDE_CODE_TASK_LIST_ID` | `src/main.tsx:1142` | task list ID (remote sessions) |
+| Any `CLAUDE_CODE_*` from user environment | inherited by CC process | passed through unchanged |
+
+These are **read** from `process.env` by the CC parent, not written to it as session-identity signals before spawning.
+
+### `CLAUDE_SESSION_ID` exposed: **NO**
+
+There is **no** `CLAUDE_SESSION_ID` variable. The internal session UUID is held in `STATE.sessionId` (in-process, `src/bootstrap/state.ts:331,447`), accessed via `getSessionId()` — it is **never written to `process.env`**.
+
+The closest env analogue is `CLAUDE_CODE_REMOTE_SESSION_ID`, which is an **input** env var read from the environment (set by the remote infrastructure before launching CC), not output by CC to its children.
+
+The `getSessionId()` UUID appears only as:
+- HTTP header `X-Mcp-Client-Session-Id: <uuid>` on HTTP/SSE MCP connections (`client.ts:895`) — not in the stdio child env.
+- String replacement `${CLAUDE_SESSION_ID}` in skill/plugin command templates (`SkillTool.ts:1079`, `loadPluginCommands.ts:374`) — substituted into command strings, not into the child env.
+
+### Selected detection strategy: **mtime-primary**
+
+**Rationale:** The session UUID is not available to MCP children via env var. The only reliable runtime signal is the mtime of JSONL files under `~/.claude/projects/`. The most-recently-modified JSONL file belongs to the active session. agent-saver should:
+
+1. **Primary:** mtime scan of `~/.claude/projects/**/*.jsonl` — pick the file modified most recently (within a recency window, e.g. < 60 s).
+2. **Fallback / disambiguation:** If multiple files are within the window, rank by mtime desc and pick the newest.
+3. **Env opportunistic bonus:** If the user's shell has `CLAUDE_CODE_REMOTE_SESSION_ID` set in the environment that launched CC, it will be present in the MCP child env — but this only applies to remote/CCR sessions, not local interactive sessions.
+
+**Conclusion:** env-based detection is unreliable for the primary local use case. mtime-primary is the correct strategy.
