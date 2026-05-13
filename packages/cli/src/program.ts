@@ -27,7 +27,13 @@ export function buildProgram(): Command {
     .action(async (name: string, opts: { global?: boolean }) => {
       const adapter = new ClaudeCodeAdapter();
       const result = await load(adapter, name, { scope: opts.global ? 'global' : 'auto' });
-      console.log(`Loaded ${result.agent.name}. Run in a new terminal:\n\n  ${result.resumeCommand}\n`);
+      const { default: clipboardy } = await import('clipboardy');
+      try {
+        await clipboardy.write(result.resumeCommand);
+        console.log(`Loaded ${result.agent.name}. Run in a new terminal:\n\n  ${result.resumeCommand}\n\n(copied to clipboard)`);
+      } catch {
+        console.log(`Loaded ${result.agent.name}. Run in a new terminal:\n\n  ${result.resumeCommand}\n\n(clipboard copy failed — paste manually)`);
+      }
     });
 
   program
