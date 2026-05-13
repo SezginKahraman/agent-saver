@@ -1,0 +1,24 @@
+{
+  "name": "agent-saver",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Save, version, and reload Claude Code agent sessions.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "echo 'lint not configured yet'",
+    "clean": "pnpm -r exec rm -rf dist .tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "~5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
