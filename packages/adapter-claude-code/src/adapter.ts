@@ -7,15 +7,25 @@ import { countMessages, estimateTokens } from './transcript-stats.js';
 import { extractFilesTouched } from './files-touched.js';
 import { buildResumeCommand } from './resume-cmd.js';
 
+export interface ClaudeCodeAdapterOpts {
+  /** Override the home directory (useful for testing). */
+  home?: string;
+}
+
 export class ClaudeCodeAdapter implements ToolAdapter {
   readonly toolName = 'claude-code';
+  private readonly home: string | undefined;
+
+  constructor(opts: ClaudeCodeAdapterOpts = {}) {
+    this.home = opts.home;
+  }
 
   async detectActiveSession(cwd: string): Promise<string | null> {
-    return detectActiveSession(cwd);
+    return detectActiveSession(cwd, { home: this.home });
   }
 
   async readTranscript(sessionId: string, cwd: string): Promise<RawTranscript> {
-    return readTranscript(sessionId, cwd);
+    return readTranscript(sessionId, cwd, { home: this.home });
   }
 
   async writeTranscript(transcript: RawTranscript, opts: WriteOpts): Promise<string> {
@@ -23,7 +33,7 @@ export class ClaudeCodeAdapter implements ToolAdapter {
       newSessionId: opts.newSessionId,
       parentSessionId: opts.parentSessionId,
     });
-    await writeTranscript(rewritten, opts);
+    await writeTranscript(rewritten, opts, { home: this.home });
     return opts.newSessionId;
   }
 
