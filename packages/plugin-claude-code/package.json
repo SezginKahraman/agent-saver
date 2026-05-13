@@ -1,0 +1,15 @@
+{
+  "name": "claude-agent-saver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent-saver/core": "workspace:*",
+    "@agent-saver/adapter-claude-code": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
