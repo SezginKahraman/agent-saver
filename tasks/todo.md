@@ -113,211 +113,213 @@ agent-saver/
 
 ---
 
-## Phase 0: Validation Spikes (do FIRST)
+## Phase 0: Validation Spikes (Sandbox Only — Real Sessions Untouched)
 
-These five questions from [spec §10](../docs/specs/2026-05-13-agent-saver-mvp-design.md#10-open-technical-questions) must be answered before writing production code. If any fails, the architecture needs adjustment.
+The three highest-risk questions from [spec §10](../docs/specs/2026-05-13-agent-saver-mvp-design.md#10-open-technical-questions) must be answered before writing production code. **All validation uses (a) static analysis of CC source at `~/repos/claude-code-main` and (b) an isolated sandbox project at `/tmp/agent-saver-spike-*/`.** No files in any existing user `~/.claude/projects/<other-dir>/` are modified. Only the sandbox's own auto-created CC subdir is touched, and cleanup removes it.
 
-### Task 0.1: Verify `claude --resume` accepts a placed JSONL with a new UUID
+### Task 0.1: Static analysis — `--resume`, JSONL paths, session ID handling
 
 **Files:**
 
-- Scratch directory: `/tmp/agent-saver-spike/`
+- Read-only: `~/repos/claude-code-main/` (CC source tree)
+- Create: `tasks/spike-findings.md` (in agent-saver repo)
 
-- [ ] **Step 1: Find a real CC session JSONL to clone**
+- [ ] **Step 1: Locate the resume command path**
 
 ```bash
-ls -lt ~/.claude/projects/-Users-sezginkahraman-repos-claude-code-main/*.jsonl | head -3
+cd ~/repos/claude-code-main
+rg -l --type=ts -- 'resumeSession|--resume|sessionId' src 2>/dev/null | head -20
 ```
 
-Pick one with at least 20 messages. Record its UUID (the filename minus `.jsonl`).
+Open the most promising files (CLI args parser, session loader). Record:
 
-- [ ] **Step 2: Generate a new UUID and clone the file**
+- Where does CC look up a session by UUID on disk?
+- The exact path pattern (`~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`)?
+- Does it accept a freshly placed JSONL (no prior memory of the UUID)?
+
+- [ ] **Step 2: Confirm cwd encoding rule**
+
+```bash
+rg --type=ts -- 'projects.*replace|encodeCwd|\.claude/projects' src | head -30
+```
+
+Confirm the encoding rule (expected: `path.replace(/\//g, '-')`). Note any edge cases.
+
+- [ ] **Step 3: Inspect the JSONL message schema**
+
+Pick an existing OLDER (not currently-active) session of yours just to inspect schema. Do not modify it:
+
+```bash
+OLD_JSONL=$(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null | tail -1)
+head -1 "$OLD_JSONL" | python3 -m json.tool | head -20
+```
+
+Confirm field names: `sessionId`, `parentUuid`, `logicalParentUuid` (if present), `type`, `content`, etc.
+
+- [ ] **Step 4: Document findings**
+
+Create `tasks/spike-findings.md`:
+
+```markdown
+# Phase 0 Spike Findings
+
+## 0.1 — Resume mechanism & JSONL schema
+
+- Resume logic file(s): `<file:lines>`
+- Cwd encoding rule confirmed: `<rule + edge cases>`
+- Session JSONL fields observed: `sessionId`, `parentUuid`, ...
+- Conclusion on placing a fresh JSONL: <CC will resume yes/no/pending Task 0.3>
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd ~/repos/agent-saver
+git add tasks/spike-findings.md
+git commit -m "spike: document --resume mechanism via static analysis"
+```
+
+### Task 0.2: Static analysis — MCP child env exposure
+
+**Files:**
+
+- Read-only: `~/repos/claude-code-main/`
+- Modify: `tasks/spike-findings.md`
+
+- [ ] **Step 1: Find the MCP child process spawn**
+
+```bash
+cd ~/repos/claude-code-main
+rg --type=ts -- 'StdioClientTransport|spawn.*mcp|child_process.*spawn' src | head -30
+```
+
+- [ ] **Step 2: Identify env passed to children**
+
+```bash
+rg --type=ts -B 2 -A 10 -- 'StdioClientTransport' src | rg -A 5 'env|CLAUDE_' | head -40
+```
+
+Look for: explicit `env:` properties on spawn options, any `CLAUDE_SESSION_ID` or `CLAUDE_*` assignments before spawning.
+
+- [ ] **Step 3: Append findings**
+
+Append to `tasks/spike-findings.md`:
+
+```markdown
+## 0.2 — MCP env exposure
+
+- MCP child spawn location: `<file:line>`
+- Env vars explicitly set on children: `<list>`
+- `CLAUDE_SESSION_ID` exposed: <yes/no>
+- Selected detection strategy: <env primary / mtime primary / both>
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tasks/spike-findings.md
+git commit -m "spike: document MCP env exposure via static analysis"
+```
+
+### Task 0.3: Sandbox empirical round-trip (UUID rewrite + resume)
+
+> **Safety:** creates `/tmp/agent-saver-spike-$$/` (fresh dir) and lets CC auto-create `~/.claude/projects/-tmp-agent-saver-spike-$$/`. Both removed at the end. Your existing project JSONLs are never read or written.
+
+- [ ] **Step 1: Create sandbox project dir**
+
+```bash
+SANDBOX="/tmp/agent-saver-spike-$$"
+mkdir -p "$SANDBOX" && cd "$SANDBOX"
+echo "$SANDBOX"
+```
+
+- [ ] **Step 2: Bootstrap a tiny CC session in the sandbox**
+
+```bash
+claude --print "Reply with exactly: SPIKE_MARKER_42" > /tmp/agent-saver-spike-out.txt 2>&1
+cat /tmp/agent-saver-spike-out.txt
+```
+
+This produces a JSONL under `~/.claude/projects/-tmp-agent-saver-spike-$$/`. Note: `$$` is the parent shell's PID; if running in a fresh shell each step, capture it once in step 1 and reuse the value.
+
+- [ ] **Step 3: Locate the sandbox JSONL**
+
+```bash
+SANDBOX_PROJECTS_DIR=~/.claude/projects/$(echo "$SANDBOX" | tr '/' '-')
+ls -la "$SANDBOX_PROJECTS_DIR"
+SRC_UUID=$(ls "$SANDBOX_PROJECTS_DIR"/*.jsonl | head -1 | xargs basename | sed 's/.jsonl$//')
+echo "source UUID: $SRC_UUID"
+```
+
+- [ ] **Step 4: Clone the JSONL with a new UUID, rewriting sessionId on every line**
 
 ```bash
 NEW_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-SRC=~/.claude/projects/-Users-sezginkahraman-repos-claude-code-main/<old-uuid>.jsonl
-DST=~/.claude/projects/-Users-sezginkahraman-repos-claude-code-main/$NEW_UUID.jsonl
-cp "$SRC" "$DST"
-echo "New session UUID: $NEW_UUID"
-```
-
-- [ ] **Step 3: Rewrite `sessionId` fields in the cloned file**
-
-```bash
-OLD_UUID=<old-uuid from step 1>
 node -e "
 const fs = require('fs');
-const path = process.argv[1];
-const oldId = process.argv[2];
-const newId = process.argv[3];
-const lines = fs.readFileSync(path, 'utf8').split('\n').filter(Boolean);
-const rewritten = lines.map(line => {
-  const obj = JSON.parse(line);
-  if (obj.sessionId === oldId) obj.sessionId = newId;
-  return JSON.stringify(obj);
-}).join('\n') + '\n';
-fs.writeFileSync(path, rewritten);
-console.log('rewrote', lines.length, 'lines');
-" "$DST" "$OLD_UUID" "$NEW_UUID"
-```
-
-- [ ] **Step 4: Attempt resume**
-
-```bash
-cd ~/repos/claude-code-main
-claude --resume $NEW_UUID
-```
-
-Expected: CC opens the session with the conversation visible. If it errors or shows an empty session, capture the exact error and stop — design needs revision.
-
-- [ ] **Step 5: Document the outcome**
-
-Append findings to `docs/specs/2026-05-13-agent-saver-mvp-design.md` §10 question 1 (replace "Needs hands-on test" with the actual result). Commit:
-
-```bash
-cd ~/repos/agent-saver
-git add docs/specs/
-git commit -m "spike: confirm --resume accepts placed JSONL with rewritten UUIDs"
-```
-
-### Task 0.2: Check whether `$CLAUDE_SESSION_ID` is exposed to MCP processes
-
-**Files:**
-
-- Scratch: `/tmp/env-spike/`
-
-- [ ] **Step 1: Write a tiny MCP server that dumps its env**
-
-```bash
-mkdir -p /tmp/env-spike && cd /tmp/env-spike
-cat > server.js <<'EOF'
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import fs from 'node:fs';
-
-const out = Object.entries(process.env)
-  .filter(([k]) => /CLAUDE|SESSION/i.test(k))
-  .map(([k, v]) => `${k}=${v}`).join('\n');
-fs.writeFileSync('/tmp/env-spike/env-dump.txt', out || '(no matching vars)');
-
-const server = new Server({ name: 'env-spike', version: '0.0.1' }, { capabilities: {} });
-const transport = new StdioServerTransport();
-await server.connect(transport);
-EOF
-npm init -y && npm install @modelcontextprotocol/sdk
-```
-
-- [ ] **Step 2: Register as a CC MCP server in a throwaway settings file**
-
-Add to `~/.claude/settings.local.json` (or wherever CC reads MCP config):
-
-```json
-{
-  "mcpServers": {
-    "env-spike": {
-      "command": "node",
-      "args": ["/tmp/env-spike/server.js"]
-    }
-  }
-}
-```
-
-- [ ] **Step 3: Launch CC in a project, then read the dumped env**
-
-```bash
-claude  # in any project; close after it boots
-cat /tmp/env-spike/env-dump.txt
-```
-
-- [ ] **Step 4: Record findings**
-
-Update spec §10 question 2. Possible outcomes:
-
-- `CLAUDE_SESSION_ID` present → use as primary detection signal.
-- Only `CLAUDE_*` variants → identify the right one.
-- None → mtime fallback becomes primary path.
-
-Commit findings:
-
-```bash
-git add docs/specs/
-git commit -m "spike: document MCP env exposure for session detection"
-```
-
-- [ ] **Step 5: Remove the spike MCP server from settings**
-
-Edit `~/.claude/settings.local.json` to remove the `env-spike` entry. `rm -rf /tmp/env-spike`.
-
-### Task 0.3: Round-trip UUID rewriting on a real transcript
-
-**Files:**
-
-- Scratch: `/tmp/uuid-spike/`
-
-- [ ] **Step 1: Clone the same source JSONL used in Task 0.1**
-
-```bash
-mkdir -p /tmp/uuid-spike && cp <src.jsonl> /tmp/uuid-spike/src.jsonl
-```
-
-- [ ] **Step 2: Build a rewrite + verify script**
-
-```bash
-cat > /tmp/uuid-spike/roundtrip.js <<'EOF'
-const fs = require('fs');
-const crypto = require('crypto');
-
-const src = '/tmp/uuid-spike/src.jsonl';
-const dst = '/tmp/uuid-spike/rewritten.jsonl';
+const src = process.argv[1];
+const dst = process.argv[2];
+const oldId = process.argv[3];
+const newId = process.argv[4];
 const lines = fs.readFileSync(src, 'utf8').split('\n').filter(Boolean);
-const original = lines.map(l => JSON.parse(l));
-const oldSession = original[0].sessionId;
-const newSession = crypto.randomUUID();
-
-const rewritten = original.map((m, i) => {
-  const out = { ...m, sessionId: newSession };
-  if (i === 0) out.parentSessionId = oldSession;
-  return out;
-});
-
-fs.writeFileSync(dst, rewritten.map(JSON.stringify).join('\n') + '\n');
-
-// Verify:
-// 1. sessionId changed on every line
-// 2. parentUuid chain unchanged
-// 3. first message has parentSessionId === oldSession
-console.assert(rewritten.every(m => m.sessionId === newSession));
-console.assert(rewritten.every((m, i) => m.parentUuid === original[i].parentUuid));
-console.assert(rewritten[0].parentSessionId === oldSession);
-console.log('OK', { oldSession, newSession, lines: lines.length });
-EOF
-node /tmp/uuid-spike/roundtrip.js
+const out = lines.map((l, i) => {
+  const o = JSON.parse(l);
+  o.sessionId = newId;
+  if (i === 0) o.parentSessionId = oldId;
+  return JSON.stringify(o);
+}).join('\n') + '\n';
+fs.writeFileSync(dst, out);
+console.log('wrote', lines.length, 'lines to', dst);
+" "$SANDBOX_PROJECTS_DIR/$SRC_UUID.jsonl" "$SANDBOX_PROJECTS_DIR/$NEW_UUID.jsonl" "$SRC_UUID" "$NEW_UUID"
+echo "new UUID: $NEW_UUID"
 ```
 
-Expected: prints `OK { oldSession, newSession, lines }`.
-
-- [ ] **Step 3: Resume the rewritten file in CC**
+- [ ] **Step 5: Attempt resume from inside the sandbox**
 
 ```bash
-NEW_UUID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/uuid-spike/rewritten.jsonl').toString().split('\n')[0]).sessionId)")
-cp /tmp/uuid-spike/rewritten.jsonl ~/.claude/projects/-Users-sezginkahraman-repos-claude-code-main/$NEW_UUID.jsonl
-cd ~/repos/claude-code-main
-claude --resume $NEW_UUID
+cd "$SANDBOX"
+claude --resume "$NEW_UUID" --print "What did I ask in the prior message?" > /tmp/agent-saver-spike-resume.txt 2>&1
+cat /tmp/agent-saver-spike-resume.txt
 ```
 
-- [ ] **Step 4: Visually verify the session loads with all messages intact**
+Expected: response references "SPIKE_MARKER_42" or the prior prompt. If error, capture full stderr.
 
-If yes: rewrite algorithm validated. If no: capture error, debug, iterate. Document in spec §10 question 3.
+- [ ] **Step 6: Append findings**
 
-- [ ] **Step 5: Cleanup and commit findings**
+Append to `tasks/spike-findings.md`:
+
+```markdown
+## 0.3 — UUID rewrite round-trip (sandbox)
+
+- Source UUID: <uuid>
+- Rewritten UUID: <uuid>
+- Resume successful: <yes/no>
+- Response cited prior message: <yes/no>
+- Notes / quirks: <any>
+```
+
+- [ ] **Step 7: Cleanup**
 
 ```bash
-rm -rf /tmp/uuid-spike /tmp/agent-saver-spike
-rm ~/.claude/projects/-Users-sezginkahraman-repos-claude-code-main/$NEW_UUID.jsonl
+rm -rf "$SANDBOX" "$SANDBOX_PROJECTS_DIR" /tmp/agent-saver-spike-out.txt /tmp/agent-saver-spike-resume.txt
+```
+
+- [ ] **Step 8: Commit findings**
+
+```bash
 cd ~/repos/agent-saver
-git add docs/specs/
-git commit -m "spike: validate UUID rewrite roundtrip"
+git add tasks/spike-findings.md
+git commit -m "spike: validate UUID rewrite round-trip via sandbox project"
 ```
+
+### Task 0.4: Gate decision
+
+Read `tasks/spike-findings.md`. For each spike, confirm "green" or capture the failure. If any fail:
+
+- Edit the spec to adjust the affected design decision.
+- Stop the implementation and discuss with the user.
+
+If all three pass: proceed to Phase 1.
 
 ---
 
