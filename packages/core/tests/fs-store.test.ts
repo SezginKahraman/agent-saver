@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,6 +27,10 @@ describe('FsStore', () => {
 
   beforeEach(async () => {
     baseDir = await mkdtemp(join(tmpdir(), 'agent-saver-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(baseDir, { recursive: true, force: true });
   });
 
   it('saves and reads back an agent', async () => {
@@ -66,5 +70,13 @@ describe('FsStore', () => {
     const all = await store.list();
     const names = all.map((r) => r.name).sort();
     expect(names).toEqual(['a', 'b']);
+  });
+
+  it('rejects names with path separators or traversal', async () => {
+    const store = new FsStore('project', baseDir);
+    const { transcript, metadata } = makeFixture();
+    await expect(store.save('../escape', transcript, metadata)).rejects.toThrow(/Invalid agent name/);
+    await expect(store.save('a/b', transcript, metadata)).rejects.toThrow(/Invalid agent name/);
+    await expect(store.has('../escape')).rejects.toThrow(/Invalid agent name/);
   });
 });

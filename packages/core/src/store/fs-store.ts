@@ -7,6 +7,9 @@ export class FsStore implements AgentStore {
   constructor(public readonly scope: Scope, public readonly baseDir: string) {}
 
   private agentDir(name: string): string {
+    if (name.length === 0 || name.includes('/') || name.includes('\\') || name === '.' || name === '..') {
+      throw new Error(`Invalid agent name: ${JSON.stringify(name)}`);
+    }
     return join(this.baseDir, name);
   }
 
@@ -14,8 +17,9 @@ export class FsStore implements AgentStore {
     try {
       await stat(join(this.agentDir(name), 'metadata.json'));
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw err;
     }
   }
 
@@ -45,8 +49,9 @@ export class FsStore implements AgentStore {
     let entries: string[];
     try {
       entries = await readdir(this.baseDir);
-    } catch {
-      return [];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
     }
     const refs: AgentRef[] = [];
     for (const name of entries) {
@@ -55,8 +60,9 @@ export class FsStore implements AgentStore {
         const metaText = await readFile(join(dir, 'metadata.json'), 'utf8');
         const metadata = JSON.parse(metaText) as Metadata;
         refs.push({ name, scope: this.scope, path: dir, metadata });
-      } catch {
-        // skip non-agent dirs
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw err;
       }
     }
     return refs;
