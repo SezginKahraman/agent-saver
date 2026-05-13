@@ -1705,6 +1705,8 @@ git commit -m "chore(core): export save/load/list from package root"
 
 ### Task 5.1: Path helpers (TDD)
 
+> **Phase 0 input:** [`tasks/spike-findings.md`](spike-findings.md) section 0.1 confirmed CC's encoding rule is `sanitizePath` from `src/utils/sessionStoragePortable.ts:311–319` (NOT a simple slash replacement). The full algorithm: `realpath` → `NFC normalize` → replace `[^a-zA-Z0-9]` with `-` → if > 200 chars, truncate + append `djb2` hash. macOS `/tmp` is a symlink to `/private/tmp` and CC resolves it, so realpath is mandatory.
+
 **Files:**
 
 - Create: `packages/adapter-claude-code/src/paths.ts`
@@ -1712,27 +1714,58 @@ git commit -m "chore(core): export save/load/list from package root"
 
 - [ ] **Step 1: Write the failing test**
 
-CC encodes the cwd as a directory name by replacing `/` with `-` and prefixing with `-`. Verify by inspection: `~/.claude/projects/` listing on the user's machine has dir names like `-Users-sezginkahraman-repos-claude-code-main`.
-
 ```typescript
 // packages/adapter-claude-code/tests/paths.test.ts
 import { describe, it, expect } from 'vitest';
-import { encodeCwd, projectSessionsDir } from '../src/paths.js';
+import { mkdtemp, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { sanitizePath, encodeCwd, projectSessionsDir, MAX_SANITIZED_LENGTH } from '../src/paths.js';
 
-describe('encodeCwd', () => {
-  it('replaces slashes with dashes and prepends a dash', () => {
-    expect(encodeCwd('/Users/x/repos/y')).toBe('-Users-x-repos-y');
+describe('sanitizePath (pure)', () => {
+  it('replaces every non-alphanumeric character with a dash', () => {
+    expect(sanitizePath('/Users/x/repos/y')).toBe('-Users-x-repos-y');
   });
 
-  it('handles paths with no trailing slash and no double-slashes', () => {
-    expect(encodeCwd('/tmp/abc')).toBe('-tmp-abc');
+  it('handles dots, colons, and other punctuation', () => {
+    expect(sanitizePath('/Users/x.y/sub:dir')).toBe('-Users-x-y-sub-dir');
+  });
+
+  it('truncates paths longer than MAX_SANITIZED_LENGTH and appends a hash', () => {
+    const long = '/' + 'a'.repeat(MAX_SANITIZED_LENGTH + 50);
+    const out = sanitizePath(long);
+    expect(out.length).toBeGreaterThan(MAX_SANITIZED_LENGTH);
+    // First MAX_SANITIZED_LENGTH chars come from the sanitized prefix:
+    expect(out.startsWith('-' + 'a'.repeat(MAX_SANITIZED_LENGTH - 1))).toBe(true);
+    expect(out).toMatch(/-[0-9a-z]+$/);
+  });
+
+  it('is deterministic for the same input', () => {
+    const long = '/' + 'a'.repeat(MAX_SANITIZED_LENGTH + 50);
+    expect(sanitizePath(long)).toBe(sanitizePath(long));
+  });
+});
+
+describe('encodeCwd', () => {
+  it('applies realpath before sanitizing (resolves symlinks)', async () => {
+    const realDir = await mkdtemp(join(tmpdir(), 'paths-real-'));
+    const linkDir = await mkdtemp(join(tmpdir(), 'paths-link-'));
+    const link = join(linkDir, 'link');
+    await symlink(realDir, link);
+    expect(encodeCwd(link)).toBe(sanitizePath(realDir));
+  });
+
+  it('falls back to raw path when realpath fails', () => {
+    // Non-existent path — realpath will throw; encode the literal input.
+    const nonexistent = '/this/path/does/not/exist/xyz';
+    expect(encodeCwd(nonexistent)).toBe(sanitizePath(nonexistent));
   });
 });
 
 describe('projectSessionsDir', () => {
-  it('joins home/.claude/projects with encoded cwd', () => {
-    const result = projectSessionsDir('/tmp/foo', '/home/me');
-    expect(result).toBe('/home/me/.claude/projects/-tmp-foo');
+  it('joins home/.claude/projects with the encoded cwd', () => {
+    const result = projectSessionsDir('/this/path/does/not/exist', '/home/me');
+    expect(result).toBe(`/home/me/.claude/projects/${sanitizePath('/this/path/does/not/exist')}`);
   });
 });
 ```
@@ -1749,11 +1782,39 @@ Expected: FAIL — module not found.
 
 ```typescript
 // packages/adapter-claude-code/src/paths.ts
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+export const MAX_SANITIZED_LENGTH = 200;
+
+/** djb2 hash to match CC's `simpleHash` path-suffix algorithm (Node case). */
+function djb2(s: string): string {
+  let hash = 5381;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) + hash) ^ s.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Pure: replaces non-alphanumeric chars with '-', truncates + hashes if too long. */
+export function sanitizePath(name: string): string {
+  const sanitized = name.replace(/[^a-zA-Z0-9]/g, '-');
+  if (sanitized.length <= MAX_SANITIZED_LENGTH) {
+    return sanitized;
+  }
+  return `${sanitized.slice(0, MAX_SANITIZED_LENGTH)}-${djb2(name)}`;
+}
+
+/** Mirrors CC: realpath → NFC normalize → sanitize. Falls back to raw input if realpath throws. */
 export function encodeCwd(cwd: string): string {
-  return cwd.replace(/\//g, '-');
+  let resolved: string;
+  try {
+    resolved = realpathSync(cwd).normalize('NFC');
+  } catch {
+    resolved = cwd.normalize('NFC');
+  }
+  return sanitizePath(resolved);
 }
 
 export function projectSessionsDir(cwd: string, home: string = homedir()): string {
@@ -1766,12 +1827,14 @@ export function projectSessionsDir(cwd: string, home: string = homedir()): strin
 ```bash
 pnpm vitest run packages/adapter-claude-code/tests/paths.test.ts
 git add packages/adapter-claude-code/src/paths.ts packages/adapter-claude-code/tests/paths.test.ts
-git commit -m "feat(adapter-cc): encodeCwd and projectSessionsDir helpers"
+git commit -m "feat(adapter-cc): encodeCwd matches CC sanitizePath (realpath+NFC+hash)"
 ```
 
-> ⚠️ **VERIFY DURING IMPLEMENTATION:** Confirm CC's actual cwd-encoding rule by listing your real `~/.claude/projects/` directory. Adjust `encodeCwd` if needed before continuing.
+> **Known v1.1 edge case:** for paths > 200 chars under Bun-runtime CC, the hash suffix differs (`Bun.hash` vs `djb2`). agent-saver running on Node would compute a different directory name. Mitigation deferred — add a prefix-scan fallback in `session-detect` (Task 5.2) so directories matching the truncated prefix are also found.
 
-### Task 5.2: Session detection (TDD)
+### Task 5.2: Session detection (TDD) — mtime-primary
+
+> **Phase 0 input:** [`tasks/spike-findings.md`](spike-findings.md) section 0.2 confirmed there is no `CLAUDE_SESSION_ID` (or equivalent) env var available to stdio MCP children — the session UUID lives only in CC's in-process state. **Detection strategy: scan `~/.claude/projects/<encoded-cwd>/*.jsonl` for the most recently modified file.** An optional `recencyMs` filter prevents accidentally picking up a stale session from days ago when no current session exists.
 
 **Files:**
 
@@ -1782,38 +1845,29 @@ git commit -m "feat(adapter-cc): encodeCwd and projectSessionsDir helpers"
 
 ```typescript
 // packages/adapter-claude-code/tests/session-detect.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { detectActiveSession } from '../src/session-detect.js';
+import { sanitizePath } from '../src/paths.js';
 
 describe('detectActiveSession', () => {
   let fakeHome: string;
-  let cwd: string;
+  // Use a path that does NOT exist so realpath throws and encodeCwd falls back
+  // to the raw input — keeps the test deterministic across platforms (/tmp vs
+  // /private/tmp on macOS).
+  const cwd = '/this-path/does/not/exist/proj';
 
   beforeEach(async () => {
     fakeHome = await mkdtemp(join(tmpdir(), 'home-'));
-    cwd = '/tmp/my-project';
   });
 
-  afterEach(() => {
-    delete process.env.CLAUDE_SESSION_ID;
-  });
-
-  it('returns env var when set', async () => {
-    process.env.CLAUDE_SESSION_ID = 'env-session-id';
-    const got = await detectActiveSession(cwd, { home: fakeHome });
-    expect(got).toBe('env-session-id');
-  });
-
-  it('falls back to most recently modified JSONL', async () => {
-    const sessionsDir = join(fakeHome, '.claude', 'projects', '-tmp-my-project');
+  it('returns the UUID of the most recently modified JSONL', async () => {
+    const sessionsDir = join(fakeHome, '.claude', 'projects', sanitizePath(cwd));
     await mkdir(sessionsDir, { recursive: true });
     await writeFile(join(sessionsDir, 'old.jsonl'), 'a');
     await writeFile(join(sessionsDir, 'new.jsonl'), 'b');
-
-    // Force old's mtime backwards
     const past = new Date(Date.now() - 60_000);
     await utimes(join(sessionsDir, 'old.jsonl'), past, past);
 
@@ -1825,6 +1879,17 @@ describe('detectActiveSession', () => {
     const got = await detectActiveSession(cwd, { home: fakeHome });
     expect(got).toBeNull();
   });
+
+  it('respects recencyMs — returns null when newest file is older than the window', async () => {
+    const sessionsDir = join(fakeHome, '.claude', 'projects', sanitizePath(cwd));
+    await mkdir(sessionsDir, { recursive: true });
+    await writeFile(join(sessionsDir, 'stale.jsonl'), 'a');
+    const past = new Date(Date.now() - 600_000); // 10 min ago
+    await utimes(join(sessionsDir, 'stale.jsonl'), past, past);
+
+    const got = await detectActiveSession(cwd, { home: fakeHome, recencyMs: 60_000 });
+    expect(got).toBeNull();
+  });
 });
 ```
 
@@ -1834,7 +1899,7 @@ describe('detectActiveSession', () => {
 pnpm vitest run packages/adapter-claude-code/tests/session-detect.test.ts
 ```
 
-Expected: FAIL.
+Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `session-detect.ts`**
 
@@ -1843,37 +1908,76 @@ Expected: FAIL.
 import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { projectSessionsDir } from './paths.js';
+import { encodeCwd, MAX_SANITIZED_LENGTH } from './paths.js';
 
 export interface DetectOpts {
   home?: string;
-  envVarName?: string;
+  /** Reject results older than this (ms). Default: no cap. */
+  recencyMs?: number;
+  /** Inject clock for tests. */
+  now?: () => number;
+}
+
+const PROJECTS_DIR = '.claude/projects';
+
+async function listJsonl(dir: string): Promise<Array<{ name: string; mtimeMs: number }>> {
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return [];
+  }
+  const out: Array<{ name: string; mtimeMs: number }> = [];
+  for (const e of entries) {
+    if (!e.endsWith('.jsonl')) continue;
+    try {
+      const s = await stat(join(dir, e));
+      out.push({ name: e, mtimeMs: s.mtimeMs });
+    } catch {
+      // skip races/permissions issues
+    }
+  }
+  return out;
 }
 
 export async function detectActiveSession(
   cwd: string,
   opts: DetectOpts = {},
 ): Promise<string | null> {
-  const envName = opts.envVarName ?? 'CLAUDE_SESSION_ID';
   const home = opts.home ?? homedir();
-  const fromEnv = process.env[envName];
-  if (fromEnv) return fromEnv;
+  const projectsRoot = join(home, PROJECTS_DIR);
+  const encoded = encodeCwd(cwd);
+  let candidates = await listJsonl(join(projectsRoot, encoded));
 
-  const dir = projectSessionsDir(cwd, home);
-  let entries: string[];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return null;
+  // Prefix-scan fallback for paths > MAX_SANITIZED_LENGTH: CC running under Bun
+  // may have hashed differently than agent-saver running under Node. Any sibling
+  // dir starting with the same truncated prefix is a viable match.
+  if (candidates.length === 0 && encoded.length > MAX_SANITIZED_LENGTH) {
+    const prefix = encoded.slice(0, MAX_SANITIZED_LENGTH);
+    let siblings: string[];
+    try {
+      siblings = await readdir(projectsRoot);
+    } catch {
+      siblings = [];
+    }
+    for (const sib of siblings) {
+      if (sib.startsWith(prefix)) {
+        candidates.push(...(await listJsonl(join(projectsRoot, sib))));
+      }
+    }
   }
-  const jsonls = entries.filter((e) => e.endsWith('.jsonl'));
-  if (jsonls.length === 0) return null;
 
-  const stats = await Promise.all(
-    jsonls.map(async (f) => ({ f, mtime: (await stat(join(dir, f))).mtimeMs })),
-  );
-  stats.sort((a, b) => b.mtime - a.mtime);
-  return stats[0]!.f.replace(/\.jsonl$/, '');
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const newest = candidates[0]!;
+
+  if (opts.recencyMs !== undefined) {
+    const now = (opts.now ?? Date.now)();
+    if (now - newest.mtimeMs > opts.recencyMs) return null;
+  }
+
+  return newest.name.replace(/\.jsonl$/, '');
 }
 ```
 
@@ -1882,7 +1986,7 @@ export async function detectActiveSession(
 ```bash
 pnpm vitest run packages/adapter-claude-code/tests/session-detect.test.ts
 git add packages/adapter-claude-code/src/session-detect.ts packages/adapter-claude-code/tests/session-detect.test.ts
-git commit -m "feat(adapter-cc): detectActiveSession with env primary + mtime fallback"
+git commit -m "feat(adapter-cc): mtime-primary session detection with prefix-scan fallback"
 ```
 
 ### Task 5.3: Transcript I/O (TDD)

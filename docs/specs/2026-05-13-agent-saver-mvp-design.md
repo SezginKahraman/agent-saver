@@ -277,22 +277,28 @@ User types `/agents`:
 
 ## 10. Open Technical Questions
 
-These must be validated during implementation, before committing to the design:
+Validated in Phase 0 (see [`tasks/spike-findings.md`](../../tasks/spike-findings.md)).
 
 1. **Does CC's `--resume <uuid>` accept a freshly written JSONL with a brand-new UUID placed in the project's session directory?**
-   Hypothesis: yes, because CC reads sessions from disk. Needs hands-on test with a manually-placed JSONL early in implementation.
+   ✅ **RESOLVED — YES (Task 0.3).** Empirical round-trip in an isolated sandbox confirmed CC loads and resumes a UUID-rewritten JSONL. The model recalled the prior message verbatim. Requirements: (a) file at `~/.claude/projects/<sanitizePath(realpath(target_cwd))>/<uuid>.jsonl`, (b) `claude --resume <uuid>` run from the same `target_cwd`, (c) valid transcript chain (`uuid` + `parentUuid` linked list, transcript-type messages).
 
 2. **Does CC set `$CLAUDE_SESSION_ID` (or equivalent) for child MCP processes?**
-   If yes, primary session detection is trivial. If no, mtime fallback becomes the primary path. Inspect MCP process env during MCP server startup as the first implementation task.
+   ✅ **RESOLVED — NO (Task 0.2).** No `CLAUDE_SESSION_ID` exists in `process.env`. The session UUID lives only in CC's in-process state (`STATE.sessionId`). Stdio MCP children inherit the full parent `process.env` via `subprocessEnv()` (`src/utils/subprocessEnv.ts:79–99`), but no session-identifying var is written to it. **Design decision: mtime-primary detection** (scan `~/.claude/projects/**/*.jsonl` and pick the most recently modified file within a recency window).
 
 3. **UUID rewriting safety in JSONL.**
-   Each message references `sessionId`, `parentUuid`, `logicalParentUuid`. The rewriting rule must be: rewrite `sessionId` to new UUID on every message; leave `parentUuid` chain intact; record the original session's last UUID as `parentSessionId` on the first message for lineage. Test by round-tripping a known-good JSONL.
+   ✅ **RESOLVED — VALIDATED (Task 0.3).** Rule that works empirically: on every line, rewrite `sessionId` to the new UUID; on line 0 only, add `parentSessionId = <old-uuid>` for lineage. The per-message `uuid` field and the `parentUuid` linked list are NOT touched. CC accepts the result without warning and continues to write new lines into the loaded file using the new sessionId. Edge cases worth observing later: lines of type `queue-operation` / `summary` / `metadata` are ignored by the transcript loader; their presence does not break resume.
 
 4. **Slash command → MCP tool invocation patterns.**
-   Confirm the cleanest way for a markdown slash command to invoke an MCP tool with arguments. Likely just instructs the LLM to call the tool, but a non-LLM-mediated path would be better if available.
+   Open — will be confirmed during plugin implementation (Phase 7 Task 7.6). Inspect another installed plugin under `~/.claude/plugins/cache/` for the canonical frontmatter schema; adjust if needed.
 
 5. **Resume command and `cwd` handling.**
-   CC's `--resume` resolves sessions relative to the current project directory. If the user runs `/load jacob` from a different `cwd` than where Jacob was saved (`metadata.source_cwd`), the output resume command must either include `cd <source_cwd> && claude --resume <uuid>` or warn loudly. Decide during implementation; default proposal: include `cd` when current `cwd` differs.
+   ✅ **RESOLVED (Task 0.1 + 0.3).** CC's `--resume` is cwd-scoped — `loadSessionFile` constructs the JSONL path from `getOriginalCwd()` via `sanitizePath`. Running `--resume <uuid>` from a different cwd than the stored project returns `null` silently. **Design decision: the resume command must prepend `cd <source_cwd> &&` whenever the current cwd differs from `metadata.source_cwd`.** Also: `source_cwd` itself must be the `realpath`-resolved path (macOS `/tmp` ≠ `/private/tmp`).
+
+## 10b. Implementation notes derived from Phase 0
+
+- **Cwd encoding (Phase 5 Task 5.1):** Apply `realpathSync(cwd)` → `.normalize('NFC')` → replace `[^a-zA-Z0-9]` with `-`. If the sanitized result is > 200 chars, truncate to 200 and append a hash. CC uses `Bun.hash` (when running under Bun) or `djb2` (when running under Node); agent-saver runs under Node, so will use `djb2`. **Edge case for v1.1:** paths > 200 chars may produce a different hash than CC; mitigate via prefix-scan (mirrors CC's own `findProjectDir`).
+- **Session detection (Phase 5 Task 5.2):** mtime scan of the project sessions dir, pick newest within recency window (~ 60 s). No env-based primary path. Document `CLAUDE_CODE_REMOTE_SESSION_ID` as an opportunistic future signal for remote sessions only.
+- **Transcript message types** (Phase 5 Task 5.4 stats): "messages" = lines with `type` in `{user, assistant, attachment, system}`. Skip `queue-operation`, `summary`, `metadata`, `attribution-snapshot`, etc.
 
 ## 11. Success Criteria
 
