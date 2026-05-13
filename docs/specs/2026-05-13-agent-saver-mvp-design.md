@@ -289,7 +289,9 @@ Validated in Phase 0 (see [`tasks/spike-findings.md`](../../tasks/spike-findings
    ✅ **RESOLVED — VALIDATED (Task 0.3).** Rule that works empirically: on every line, rewrite `sessionId` to the new UUID; on line 0 only, add `parentSessionId = <old-uuid>` for lineage. The per-message `uuid` field and the `parentUuid` linked list are NOT touched. CC accepts the result without warning and continues to write new lines into the loaded file using the new sessionId. Edge cases worth observing later: lines of type `queue-operation` / `summary` / `metadata` are ignored by the transcript loader; their presence does not break resume.
 
 4. **Slash command → MCP tool invocation patterns.**
-   Open — will be confirmed during plugin implementation (Phase 7 Task 7.6). Inspect another installed plugin under `~/.claude/plugins/cache/` for the canonical frontmatter schema; adjust if needed.
+   ✅ **RESOLVED — Phase 7 Task 7.6.** Real CC slash command markdown uses only `description:` (and optionally `allowed-tools:`) in frontmatter. There is **no** `arguments:` schema field — arguments are referenced in the body prose as `$@` (all args) or `$1` (first arg). The LLM parses the body as a free-form prompt. agent-saver's `save.md` / `load.md` / `agents.md` follow this convention.
+
+   Also confirmed: real plugins place `plugin.json` at `<plugin-root>/.claude-plugin/plugin.json` (not at the package root); commands live at `<plugin-root>/commands/`. Manifest paths should use `${CLAUDE_PLUGIN_ROOT}` for portability.
 
 5. **Resume command and `cwd` handling.**
    ✅ **RESOLVED (Task 0.1 + 0.3).** CC's `--resume` is cwd-scoped — `loadSessionFile` constructs the JSONL path from `getOriginalCwd()` via `sanitizePath`. Running `--resume <uuid>` from a different cwd than the stored project returns `null` silently. **Design decision: the resume command must prepend `cd <source_cwd> &&` whenever the current cwd differs from `metadata.source_cwd`.** Also: `source_cwd` itself must be the `realpath`-resolved path (macOS `/tmp` ≠ `/private/tmp`).
