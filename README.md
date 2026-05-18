@@ -219,4 +219,4 @@ The project is in pre-MVP design phase. Watch the repo or open an issue to follo
 
 ## License
 
-TBD — will be set before first public release.
+MIT — see [LICENSE](LICENSE).

@@ -16,7 +16,7 @@
       "author": {
         "name": "Sezgin Kahraman"
       },
-      "license": "UNLICENSED",
+      "license": "MIT",
       "keywords": ["session", "save", "reload", "agent", "snapshot"],
       "category": "productivity"
     }
