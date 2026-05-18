@@ -40,4 +40,33 @@ describe('rewriteUuids', () => {
     const out = rewriteUuids({ raw }, { newSessionId: 'n', parentSessionId: 'o' });
     expect(out.raw.endsWith('\n')).toBe(true);
   });
+
+  it('patches toolUseResult.originalFile=null to empty string', () => {
+    const input = [
+      JSON.stringify({
+        type: 'user',
+        uuid: 'a',
+        parentUuid: null,
+        sessionId: 'orig',
+        toolUseResult: { type: 'create', filePath: '/x', originalFile: null },
+      }),
+      JSON.stringify({
+        type: 'user',
+        uuid: 'b',
+        parentUuid: 'a',
+        sessionId: 'orig',
+        toolUseResult: { type: 'update', filePath: '/y', originalFile: 'existing content' },
+      }),
+      JSON.stringify({ type: 'assistant', uuid: 'c', parentUuid: 'b', sessionId: 'orig' }),
+    ].join('\n') + '\n';
+
+    const out = rewriteUuids({ raw: input }, { newSessionId: 'new', parentSessionId: 'p' });
+    const parsed = out.raw.split('\n').filter(Boolean).map((l) =>
+      JSON.parse(l) as { toolUseResult?: { originalFile?: unknown } },
+    );
+
+    expect(parsed[0]!.toolUseResult!.originalFile).toBe('');
+    expect(parsed[1]!.toolUseResult!.originalFile).toBe('existing content');
+    expect(parsed[2]!.toolUseResult).toBeUndefined();
+  });
 });
