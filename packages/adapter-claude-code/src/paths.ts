@@ -4,6 +4,21 @@ import { join } from 'node:path';
 
 export const MAX_SANITIZED_LENGTH = 200;
 
+/** CC's per-user state root, relative to the resolved home. */
+export const CLAUDE_DIR = '.claude';
+/** Subdirectory of CLAUDE_DIR where session JSONLs live. */
+export const PROJECTS_SUBDIR = 'projects';
+
+/**
+ * Single home-resolution policy used across the adapter. Prefers explicit
+ * override (for tests), then `$HOME` (which `os.homedir()` ignores in some
+ * environments, notably macOS Vitest workers using `getpwuid_r`), then
+ * `homedir()` as a last-resort fallback.
+ */
+export function resolveHome(opts?: { home?: string }): string {
+  return opts?.home ?? process.env.HOME ?? homedir();
+}
+
 /** djb2 hash to match CC's `simpleHash` path-suffix algorithm (Node case). */
 function djb2(s: string): string {
   let hash = 5381;
@@ -33,6 +48,6 @@ export function encodeCwd(cwd: string): string {
   return sanitizePath(resolved);
 }
 
-export function projectSessionsDir(cwd: string, home: string = homedir()): string {
-  return join(home, '.claude', 'projects', encodeCwd(cwd));
+export function projectSessionsDir(cwd: string, home: string = resolveHome()): string {
+  return join(home, CLAUDE_DIR, PROJECTS_SUBDIR, encodeCwd(cwd));
 }

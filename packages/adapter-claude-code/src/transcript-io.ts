@@ -1,8 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { RawTranscript } from '@agent-saver/core';
-import { projectSessionsDir } from './paths.js';
+import type { RawTranscript, WriteOpts } from '@agent-saver/core';
+import { projectSessionsDir, resolveHome } from './paths.js';
 
 export interface IoOpts {
   home?: string;
@@ -13,24 +12,18 @@ export async function readTranscript(
   cwd: string,
   opts: IoOpts = {},
 ): Promise<RawTranscript> {
-  const home = opts.home ?? homedir();
+  const home = resolveHome(opts);
   const file = join(projectSessionsDir(cwd, home), `${sessionId}.jsonl`);
   const raw = await readFile(file, 'utf8');
   return { raw };
 }
 
-export interface WriteParams {
-  newSessionId: string;
-  parentSessionId: string;
-  targetCwd: string;
-}
-
 export async function writeTranscript(
   transcript: RawTranscript,
-  params: WriteParams,
+  params: WriteOpts,
   opts: IoOpts = {},
 ): Promise<void> {
-  const home = opts.home ?? homedir();
+  const home = resolveHome(opts);
   const dir = projectSessionsDir(params.targetCwd, home);
   await mkdir(dir, { recursive: true });
   const file = join(dir, `${params.newSessionId}.jsonl`);

@@ -1,7 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { encodeCwd, MAX_SANITIZED_LENGTH } from './paths.js';
+import { CLAUDE_DIR, PROJECTS_SUBDIR, encodeCwd, MAX_SANITIZED_LENGTH, resolveHome } from './paths.js';
 
 export interface DetectOpts {
   home?: string;
@@ -10,8 +9,6 @@ export interface DetectOpts {
   /** Inject clock for tests. */
   now?: () => number;
 }
-
-const PROJECTS_DIR = '.claude/projects';
 
 async function listJsonl(dir: string): Promise<Array<{ name: string; mtimeMs: number }>> {
   let entries: string[];
@@ -37,8 +34,8 @@ export async function detectActiveSession(
   cwd: string,
   opts: DetectOpts = {},
 ): Promise<string | null> {
-  const home = opts.home ?? homedir();
-  const projectsRoot = join(home, PROJECTS_DIR);
+  const home = resolveHome(opts);
+  const projectsRoot = join(home, CLAUDE_DIR, PROJECTS_SUBDIR);
   const encoded = encodeCwd(cwd);
   let candidates = await listJsonl(join(projectsRoot, encoded));
 

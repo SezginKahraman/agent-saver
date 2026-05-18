@@ -6,6 +6,7 @@ import { rewriteUuids } from './uuid-rewrite.js';
 import { countMessages, estimateTokens } from './transcript-stats.js';
 import { extractFilesTouched } from './files-touched.js';
 import { buildResumeCommand } from './resume-cmd.js';
+import { resolveHome } from './paths.js';
 
 export interface ClaudeCodeAdapterOpts {
   /** Override the home directory (useful for testing). */
@@ -14,18 +15,18 @@ export interface ClaudeCodeAdapterOpts {
 
 export class ClaudeCodeAdapter implements ToolAdapter {
   readonly toolName = 'claude-code';
-  private readonly home: string | undefined;
+  private readonly home: string;
 
   constructor(opts: ClaudeCodeAdapterOpts = {}) {
-    this.home = opts.home;
+    this.home = resolveHome(opts);
   }
 
   async detectActiveSession(cwd: string): Promise<string | null> {
-    return detectActiveSession(cwd, { ...(this.home !== undefined && { home: this.home }) });
+    return detectActiveSession(cwd, { home: this.home });
   }
 
   async readTranscript(sessionId: string, cwd: string): Promise<RawTranscript> {
-    return readTranscript(sessionId, cwd, { ...(this.home !== undefined && { home: this.home }) });
+    return readTranscript(sessionId, cwd, { home: this.home });
   }
 
   async writeTranscript(transcript: RawTranscript, opts: WriteOpts): Promise<string> {
@@ -33,7 +34,7 @@ export class ClaudeCodeAdapter implements ToolAdapter {
       newSessionId: opts.newSessionId,
       parentSessionId: opts.parentSessionId,
     });
-    await writeTranscript(rewritten, opts, { ...(this.home !== undefined && { home: this.home }) });
+    await writeTranscript(rewritten, opts, { home: this.home });
     return opts.newSessionId;
   }
 
