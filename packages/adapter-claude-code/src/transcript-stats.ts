@@ -1,18 +1,8 @@
 import type { RawTranscript } from '@agent-saver/core';
+import { parseLines } from './jsonl.js';
 
 const MESSAGE_TYPES = new Set(['user', 'assistant']);
 const CHARS_PER_TOKEN = 4;
-
-function* parseLines(transcript: RawTranscript): Generator<Record<string, unknown>> {
-  for (const line of transcript.raw.split('\n')) {
-    if (!line) continue;
-    try {
-      yield JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      // skip malformed lines
-    }
-  }
-}
 
 export function countMessages(transcript: RawTranscript): number {
   let n = 0;

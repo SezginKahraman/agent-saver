@@ -1,4 +1,5 @@
 import type { RawTranscript } from '@agent-saver/core';
+import { parseLines } from './jsonl.js';
 
 const FILE_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit']);
 
@@ -10,15 +11,8 @@ interface ContentBlock {
 
 export function extractFilesTouched(transcript: RawTranscript): string[] {
   const seen = new Set<string>();
-  for (const line of transcript.raw.split('\n')) {
-    if (!line) continue;
-    let obj: unknown;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const content = (obj as { content?: unknown }).content;
+  for (const obj of parseLines(transcript)) {
+    const content = obj.content;
     if (!Array.isArray(content)) continue;
     for (const block of content as ContentBlock[]) {
       if (block?.type !== 'tool_use') continue;

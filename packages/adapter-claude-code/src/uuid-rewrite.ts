@@ -1,4 +1,5 @@
 import type { RawTranscript } from '@agent-saver/core';
+import { iterLines } from './jsonl.js';
 
 export interface RewriteParams {
   newSessionId: string;
@@ -25,24 +26,22 @@ function patchNullOriginalFile(obj: Record<string, unknown>): void {
 }
 
 export function rewriteUuids(transcript: RawTranscript, params: RewriteParams): RawTranscript {
-  const lines = transcript.raw.split('\n').filter(Boolean);
   const out: string[] = [];
+  let isFirst = true;
 
-  lines.forEach((line, idx) => {
-    let obj: Record<string, unknown>;
-    try {
-      obj = JSON.parse(line) as Record<string, unknown>;
-    } catch {
+  for (const { line, parsed } of iterLines(transcript)) {
+    if (parsed === null) {
       out.push(line);
-      return;
+      continue;
     }
-    obj.sessionId = params.newSessionId;
-    if (idx === 0) {
-      obj.parentSessionId = params.parentSessionId;
+    parsed.sessionId = params.newSessionId;
+    if (isFirst) {
+      parsed.parentSessionId = params.parentSessionId;
+      isFirst = false;
     }
-    patchNullOriginalFile(obj);
-    out.push(JSON.stringify(obj));
-  });
+    patchNullOriginalFile(parsed);
+    out.push(JSON.stringify(parsed));
+  }
 
   return { raw: out.join('\n') + '\n' };
 }
