@@ -7,6 +7,7 @@ import { load } from '../src/operations/load.js';
 import { ProjectStore } from '../src/store/project-store.js';
 import type { Metadata, RawTranscript } from '../src/types.js';
 import type { ToolAdapter, WriteOpts } from '../src/adapter.js';
+import { VERSION } from '../src/version.js';
 
 class MockAdapter implements ToolAdapter {
   readonly toolName = 'mock';
@@ -40,7 +41,7 @@ function metaFixture(name: string, sourceCwd: string): Metadata {
   return {
     name,
     created_at: '2026-05-13T00:00:00Z',
-    agent_saver_version: '0.1.0',
+    agent_saver_version: VERSION,
     source_tool: 'mock',
     source_session_id: 'orig-session',
     source_cwd: sourceCwd,

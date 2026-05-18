@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FsStore } from '../src/store/fs-store.js';
 import type { Metadata, RawTranscript } from '../src/types.js';
+import { VERSION } from '../src/version.js';
 
 function makeFixture() {
   const transcript: RawTranscript = { raw: '{"hello":"world"}\n' };
@@ -11,7 +12,7 @@ function makeFixture() {
     name: 'jacob',
     description: 'auth expert',
     created_at: '2026-05-13T00:00:00Z',
-    agent_saver_version: '0.1.0',
+    agent_saver_version: VERSION,
     source_tool: 'claude-code',
     source_session_id: 'abc-123',
     source_cwd: '/tmp/proj',

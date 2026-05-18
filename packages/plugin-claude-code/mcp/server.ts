@@ -2,12 +2,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { VERSION } from '@agent-saver/core';
 import { saveAgentTool, saveAgentHandler } from './tools/save-agent.js';
 import { loadAgentTool, loadAgentHandler } from './tools/load-agent.js';
 import { listAgentsTool, listAgentsHandler } from './tools/list-agents.js';
 
 const server = new Server(
-  { name: 'agent-saver', version: '0.1.0' },
+  { name: 'agent-saver', version: VERSION },
   { capabilities: { tools: {} } },
 );
 

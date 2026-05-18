@@ -7,12 +7,13 @@ import { list } from '../src/operations/list.js';
 import { ProjectStore } from '../src/store/project-store.js';
 import { GlobalStore } from '../src/store/global-store.js';
 import type { Metadata } from '../src/types.js';
+import { VERSION } from '../src/version.js';
 
 function meta(name: string, cwd: string): Metadata {
   return {
     name,
     created_at: '2026-05-13T00:00:00Z',
-    agent_saver_version: '0.1.0',
+    agent_saver_version: VERSION,
     source_tool: 'mock',
     source_session_id: 'sid',
     source_cwd: cwd,
