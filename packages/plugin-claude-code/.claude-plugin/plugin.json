@@ -6,7 +6,7 @@
   "mcpServers": {
     "agent-saver": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp/server.js"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/server.js"]
     }
   }
 }
