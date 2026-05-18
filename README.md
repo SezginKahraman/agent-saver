@@ -28,7 +28,9 @@ Claude Code conversations have a hard ceiling: when context fills up, it compact
 
 The MVP ships two things: a **Claude Code plugin** (slash commands + MCP server) and a **standalone CLI** (`agent-saver`).
 
-### From source (MVP path)
+### From source
+
+Clone and build:
 
 ```bash
 git clone https://github.com/SezginKahraman/agent-saver.git ~/code/agent-saver
@@ -37,30 +39,40 @@ pnpm install
 pnpm build
 ```
 
-Then link the plugin into Claude Code:
+**Install the plugin into Claude Code:**
 
 ```bash
-# CC reads plugins from ~/.claude/plugins/
-ln -s ~/code/agent-saver/packages/plugin-claude-code ~/.claude/plugins/agent-saver
+claude plugin marketplace add ~/code/agent-saver
+claude plugin install claude-agent-saver@agent-saver
 ```
 
-And link the CLI:
+Restart any Claude Code session. The `/save`, `/load`, `/agents` slash commands should appear.
+
+**Install the CLI on your PATH:**
 
 ```bash
-pnpm --filter @agent-saver/cli link --global
-# Now `agent-saver` is on your PATH.
+# Pick any directory that's on your PATH and you can write to.
+# ~/.local/bin works on most Linux/macOS setups (and is on the default PATH on macOS).
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/agent-saver <<'EOF'
+#!/bin/sh
+exec node "$HOME/code/agent-saver/packages/cli/dist/index.js" "$@"
+EOF
+chmod +x ~/.local/bin/agent-saver
+
+# Verify
+agent-saver --version    # → 0.1.0
 ```
 
-Restart Claude Code (or open a new session). The `/save`, `/load`, `/agents` slash commands should appear.
+> **Note:** `pnpm link --global` and `npm link` may fail without elevated permissions on macOS because the default npm prefix is `/usr/local`. The wrapper script above sidesteps that.
 
-### From the marketplace (future, post-publish)
+### Updating
 
 ```bash
-# In Claude Code:
-/plugin install agent-saver
-
-# CLI:
-npm install -g @agent-saver/cli
+cd ~/code/agent-saver
+git pull && pnpm build
+claude plugin marketplace update agent-saver
+claude plugin update claude-agent-saver
 ```
 
 ---
