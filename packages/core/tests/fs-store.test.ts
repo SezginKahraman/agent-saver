@@ -1,40 +1,30 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
 import { FsStore } from '../src/store/fs-store.js';
-import type { Metadata, RawTranscript } from '../src/types.js';
-import { VERSION } from '../src/version.js';
+import type { RawTranscript } from '../src/types.js';
+import { useTempDir } from './helpers/temp-dir.js';
+import { makeMetadata } from './helpers/fixtures.js';
 
 function makeFixture() {
   const transcript: RawTranscript = { raw: '{"hello":"world"}\n' };
-  const metadata: Metadata = {
+  const metadata = makeMetadata({
     name: 'jacob',
     description: 'auth expert',
-    created_at: '2026-05-13T00:00:00Z',
-    agent_saver_version: VERSION,
     source_tool: 'claude-code',
     source_session_id: 'abc-123',
     source_cwd: '/tmp/proj',
     message_count: 42,
     estimated_tokens: 1000,
     files_touched: ['src/auth.ts'],
-  };
+  });
   return { transcript, metadata };
 }
 
 describe('FsStore', () => {
-  let baseDir: string;
-
-  beforeEach(async () => {
-    baseDir = await mkdtemp(join(tmpdir(), 'agent-saver-test-'));
-  });
-
-  afterEach(async () => {
-    await rm(baseDir, { recursive: true, force: true });
-  });
+  const getDir = useTempDir('agent-saver-test-');
 
   it('saves and reads back an agent', async () => {
+    const baseDir = getDir();
     const store = new FsStore('project', baseDir);
     const { transcript, metadata } = makeFixture();
 
@@ -51,7 +41,7 @@ describe('FsStore', () => {
   });
 
   it('has() returns true after save, false otherwise', async () => {
-    const store = new FsStore('global', baseDir);
+    const store = new FsStore('global', getDir());
     expect(await store.has('nobody')).toBe(false);
 
     const { transcript, metadata } = makeFixture();
@@ -62,7 +52,7 @@ describe('FsStore', () => {
   });
 
   it('list() returns all saved agents', async () => {
-    const store = new FsStore('project', baseDir);
+    const store = new FsStore('project', getDir());
     const { transcript, metadata } = makeFixture();
 
     await store.save('a', transcript, { ...metadata, name: 'a' });
@@ -74,7 +64,7 @@ describe('FsStore', () => {
   });
 
   it('rejects names with path separators or traversal', async () => {
-    const store = new FsStore('project', baseDir);
+    const store = new FsStore('project', getDir());
     const { transcript, metadata } = makeFixture();
     await expect(store.save('../escape', transcript, metadata)).rejects.toThrow(/Invalid agent name/);
     await expect(store.save('a/b', transcript, metadata)).rejects.toThrow(/Invalid agent name/);

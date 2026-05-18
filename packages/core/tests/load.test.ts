@@ -1,70 +1,21 @@
-// packages/core/tests/load.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, it, expect } from 'vitest';
 import { load } from '../src/operations/load.js';
 import { ProjectStore } from '../src/store/project-store.js';
-import type { Metadata, RawTranscript } from '../src/types.js';
-import type { ToolAdapter, WriteOpts } from '../src/adapter.js';
-import { VERSION } from '../src/version.js';
-
-class MockAdapter implements ToolAdapter {
-  readonly toolName = 'mock';
-  public lastWriteOpts?: WriteOpts;
-  async detectActiveSession() {
-    return null;
-  }
-  async readTranscript(): Promise<RawTranscript> {
-    return { raw: '' };
-  }
-  async writeTranscript(_t: RawTranscript, opts: WriteOpts): Promise<string> {
-    this.lastWriteOpts = opts;
-    return opts.newSessionId;
-  }
-  resumeCommand(sessionId: string, sourceCwd: string, currentCwd: string): string {
-    if (sourceCwd === currentCwd) return `claude --resume ${sessionId}`;
-    return `cd ${sourceCwd} && claude --resume ${sessionId}`;
-  }
-  extractFilesTouched() {
-    return [];
-  }
-  countMessages() {
-    return 0;
-  }
-  estimateTokens() {
-    return 0;
-  }
-}
-
-function metaFixture(name: string, sourceCwd: string): Metadata {
-  return {
-    name,
-    created_at: '2026-05-13T00:00:00Z',
-    agent_saver_version: VERSION,
-    source_tool: 'mock',
-    source_session_id: 'orig-session',
-    source_cwd: sourceCwd,
-    message_count: 5,
-    estimated_tokens: 100,
-    files_touched: [],
-  };
-}
+import { useTempDir } from './helpers/temp-dir.js';
+import { makeMetadata } from './helpers/fixtures.js';
+import { MockAdapter } from './helpers/mock-adapter.js';
 
 describe('load', () => {
-  let repo: string;
-
-  beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), 'load-test-'));
-  });
-
-  afterEach(async () => {
-    await rm(repo, { recursive: true, force: true });
-  });
+  const getRepo = useTempDir('load-test-');
 
   it('loads project-scoped agent and returns resume command for same cwd', async () => {
+    const repo = getRepo();
     const store = new ProjectStore(repo);
-    await store.save('jacob', { raw: 'x' }, metaFixture('jacob', repo));
+    await store.save(
+      'jacob',
+      { raw: 'x' },
+      makeMetadata({ name: 'jacob', source_cwd: repo, message_count: 5, estimated_tokens: 100 }),
+    );
 
     const adapter = new MockAdapter();
     const result = await load(adapter, 'jacob', { cwd: repo });
@@ -80,6 +31,6 @@ describe('load', () => {
 
   it('throws when name does not exist', async () => {
     const adapter = new MockAdapter();
-    await expect(load(adapter, 'missing', { cwd: repo })).rejects.toThrow(/not found/i);
+    await expect(load(adapter, 'missing', { cwd: getRepo() })).rejects.toThrow(/not found/i);
   });
 });

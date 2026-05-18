@@ -1,49 +1,29 @@
-// packages/core/tests/list.test.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { list } from '../src/operations/list.js';
 import { ProjectStore } from '../src/store/project-store.js';
 import { GlobalStore } from '../src/store/global-store.js';
-import type { Metadata } from '../src/types.js';
-import { VERSION } from '../src/version.js';
-
-function meta(name: string, cwd: string): Metadata {
-  return {
-    name,
-    created_at: '2026-05-13T00:00:00Z',
-    agent_saver_version: VERSION,
-    source_tool: 'mock',
-    source_session_id: 'sid',
-    source_cwd: cwd,
-    message_count: 0,
-    estimated_tokens: 0,
-    files_touched: [],
-  };
-}
+import { useTempDir } from './helpers/temp-dir.js';
+import { makeMetadata } from './helpers/fixtures.js';
 
 const origHome = process.env.HOME;
 
 describe('list', () => {
-  let repo: string;
-  let fakeHome: string;
+  const getRepo = useTempDir('list-repo-');
+  const getFakeHome = useTempDir('list-home-');
 
-  beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), 'list-repo-'));
-    fakeHome = await mkdtemp(join(tmpdir(), 'list-home-'));
-    process.env.HOME = fakeHome;
+  beforeEach(() => {
+    process.env.HOME = getFakeHome();
   });
 
-  afterEach(async () => {
-    await rm(repo, { recursive: true, force: true });
-    await rm(fakeHome, { recursive: true, force: true });
+  afterEach(() => {
     if (origHome !== undefined) process.env.HOME = origHome;
+    else delete process.env.HOME;
   });
 
   it('returns project + global combined when scope=auto', async () => {
-    await new ProjectStore(repo).save('a', { raw: '' }, meta('a', repo));
-    await new GlobalStore().save('b', { raw: '' }, meta('b', repo));
+    const repo = getRepo();
+    await new ProjectStore(repo).save('a', { raw: '' }, makeMetadata({ name: 'a', source_cwd: repo }));
+    await new GlobalStore().save('b', { raw: '' }, makeMetadata({ name: 'b', source_cwd: repo }));
 
     const all = await list({ cwd: repo, scope: 'auto' });
     const names = all.map((r) => `${r.scope}/${r.name}`).sort();
@@ -51,8 +31,9 @@ describe('list', () => {
   });
 
   it('respects scope=project', async () => {
-    await new ProjectStore(repo).save('a', { raw: '' }, meta('a', repo));
-    await new GlobalStore().save('b', { raw: '' }, meta('b', repo));
+    const repo = getRepo();
+    await new ProjectStore(repo).save('a', { raw: '' }, makeMetadata({ name: 'a', source_cwd: repo }));
+    await new GlobalStore().save('b', { raw: '' }, makeMetadata({ name: 'b', source_cwd: repo }));
 
     const out = await list({ cwd: repo, scope: 'project' });
     expect(out.map((r) => r.name)).toEqual(['a']);
