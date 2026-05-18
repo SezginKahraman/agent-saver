@@ -1,0 +1,24 @@
+{
+  "name": "agent-saver",
+  "owner": {
+    "name": "Sezgin Kahraman"
+  },
+  "metadata": {
+    "description": "Save, version, and reload Claude Code agent sessions",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-agent-saver",
+      "source": "./packages/plugin-claude-code",
+      "description": "Save, name, and reload Claude Code sessions.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Sezgin Kahraman"
+      },
+      "license": "UNLICENSED",
+      "keywords": ["session", "save", "reload", "agent", "snapshot"],
+      "category": "productivity"
+    }
+  ]
+}
