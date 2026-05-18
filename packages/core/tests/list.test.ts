@@ -38,4 +38,13 @@ describe('list', () => {
     const out = await list({ cwd: repo, scope: 'project' });
     expect(out.map((r) => r.name)).toEqual(['a']);
   });
+
+  it('respects scope=global', async () => {
+    const repo = getRepo();
+    await new ProjectStore(repo).save('a', { raw: '' }, makeMetadata({ name: 'a', source_cwd: repo }));
+    await new GlobalStore().save('b', { raw: '' }, makeMetadata({ name: 'b', source_cwd: repo }));
+
+    const out = await list({ cwd: repo, scope: 'global' });
+    expect(out.map((r) => `${r.scope}/${r.name}`)).toEqual(['global/b']);
+  });
 });
