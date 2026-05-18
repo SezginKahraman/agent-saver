@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ToolAdapter } from '../adapter.js';
 import type { LoadOpts, LoadResult } from '../types.js';
+import type { SavedAgent } from '../store/index.js';
 import { ProjectStore } from '../store/project-store.js';
 import { GlobalStore } from '../store/global-store.js';
 
@@ -16,7 +17,7 @@ export async function load(
   const projectStore = new ProjectStore(cwd);
   const globalStore = new GlobalStore();
 
-  let found: Awaited<ReturnType<typeof projectStore.read>> | null = null;
+  let found: SavedAgent | null = null;
   if (scopePref !== 'global' && (await projectStore.has(name))) {
     found = await projectStore.read(name);
   } else if (scopePref !== 'project' && (await globalStore.has(name))) {

@@ -69,7 +69,9 @@ describe('load', () => {
     const result = await load(adapter, 'jacob', { cwd: repo });
 
     expect(result.agent.name).toBe('jacob');
-    expect(result.newSessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.newSessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(result.resumeCommand).toBe(`claude --resume ${result.newSessionId}`);
     expect(adapter.lastWriteOpts?.parentSessionId).toBe('orig-session');
     expect(adapter.lastWriteOpts?.targetCwd).toBe(repo);

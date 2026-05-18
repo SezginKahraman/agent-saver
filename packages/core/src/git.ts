@@ -4,9 +4,9 @@ import { promisify } from 'node:util';
 const pexec = promisify(exec);
 
 export interface GitContext {
-  git_branch?: string;
-  git_sha?: string;
-  git_dirty?: boolean;
+  readonly git_branch?: string;
+  readonly git_sha?: string;
+  readonly git_dirty?: boolean;
 }
 
 async function tryGit(args: string, cwd: string): Promise<string | null> {
@@ -28,9 +28,9 @@ export async function collectGitContext(cwd: string): Promise<GitContext> {
     tryGit('status --porcelain', cwd),
   ]);
 
-  const ctx: GitContext = {};
-  if (sha) ctx.git_sha = sha;
-  if (branch) ctx.git_branch = branch;
-  if (status !== null) ctx.git_dirty = status.length > 0;
-  return ctx;
+  return {
+    ...(sha ? { git_sha: sha } : {}),
+    ...(branch ? { git_branch: branch } : {}),
+    ...(status !== null ? { git_dirty: status.length > 0 } : {}),
+  };
 }

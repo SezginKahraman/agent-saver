@@ -10,30 +10,30 @@ export interface RawTranscript {
 }
 
 export interface Metadata {
-  name: string;
-  description?: string;
-  created_at: string;
-  agent_saver_version: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly created_at: string;
+  readonly agent_saver_version: string;
 
-  source_tool: string;
-  source_session_id: string;
-  source_cwd: string;
+  readonly source_tool: string;
+  readonly source_session_id: string;
+  readonly source_cwd: string;
 
-  git_branch?: string;
-  git_sha?: string;
-  git_dirty?: boolean;
+  readonly git_branch?: string;
+  readonly git_sha?: string;
+  readonly git_dirty?: boolean;
 
-  message_count: number;
-  estimated_tokens: number;
-  files_touched: string[];
+  readonly message_count: number;
+  readonly estimated_tokens: number;
+  readonly files_touched: readonly string[];
 }
 
 export interface AgentRef {
-  name: string;
-  scope: Scope;
+  readonly name: string;
+  readonly scope: Scope;
   /** Absolute path to the agent directory. */
-  path: string;
-  metadata: Metadata;
+  readonly path: string;
+  readonly metadata: Metadata;
 }
 
 export interface SaveOpts {
